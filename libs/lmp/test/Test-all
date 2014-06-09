@@ -1,0 +1,38 @@
+#!/bin/bash
+
+# (C) Copyright Vesa Karvonen 2004.
+#
+# Distributed under the Boost Software License, Version 1.0.
+# (See accompanying file LICENSE.)
+
+set -e
+
+TIMEFORMAT='%R seconds'
+
+rootDir="../../.."
+
+if test -d "$rootDir/../boost" ; then
+    boostInc="-I $rootDir/../boost"
+    echo "Including Boost through '$boostInc'."
+else
+    boostInc=''
+    echo "Using system version of Boost."
+fi
+
+function compile {
+    g++ -c -std=c++98 -Wall -pedantic -I "$rootDir" $boostInc "$@"
+    rm -f ./*.o
+}
+
+find "$rootDir/boost/lmp/" -name '*.hpp' -a -not -path '*/detail/*' | sed -e "s|^$rootDir/|#include \"|g" -e 's|$|"|g' > .Full.cpp
+echo -n "Full include... "
+time compile .Full.cpp
+rm .Full.cpp
+
+echo -n "Compiling tests... "
+time compile `echo test_*.cpp`
+
+echo -n "Checking header self-containment... "
+time for f in $rootDir/boost/lmp/*.hpp ; do
+    compile -include "$f" test_Template.cpp
+done

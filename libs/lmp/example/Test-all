@@ -1,0 +1,30 @@
+#!/bin/bash
+
+# (C) Copyright Vesa Karvonen 2004.
+#
+# Distributed under the Boost Software License, Version 1.0.
+# (See accompanying file LICENSE.)
+
+set -e
+
+TIMEFORMAT='%R seconds'
+
+rootDir="../../.."
+
+if test -d "$rootDir/../boost" ; then
+    boostInc="-I $rootDir/../boost"
+    echo "Including Boost through '$boostInc'."
+else
+    boostInc=''
+    echo "Using system version of Boost."
+fi
+
+for f in *.cpp ; do
+    echo -n "$f: "
+    time g++ -std=c++98 -Wall -pedantic \
+             -I "$rootDir" $boostInc \
+             -o "$f.exe" \
+             "$f"
+    "./$f.exe"
+    rm "$f.exe"
+done

@@ -1,0 +1,396 @@
+  (C) Copyright Vesa Karvonen 2004.
+
+  Distributed under the Boost Software License, Version 1.0.
+  (See accompanying file LICENSE.)
+
+==========================================================================
+                         An introduction to LMP
+==========================================================================
+
+  LMP is short for Lazy MetaProgramming library.  LMP is a template
+  metaprogramming (TMP) library that supports lazy template
+  metaprogramming.
+
+What is lazy template metaprogramming?
+--------------------------------------
+
+  Lazy template metaprogramming (LazyTMP) is different from the strict
+  template metaprogramming (StrictTMP) model supported by most, if not
+  all, contemporary template metaprogramming libraries.  For example, the
+  books "Generative Programming", "Modern C++ Design", and "C++ Template
+  Metaprogramming" describe StrictTMP.
+
+  The difference between LazyTMP and StrictTMP is that a LazyTMP
+  metafunction (like `append') or a data type constructor (like `cons')
+  does not expect to receive values as arguments.  When this rule is
+  applied systematically, it naturally leads to a model of programming
+  that is lazy (or non-strict) like in the well known programming language
+  Haskell.  What makes LazyTMP interesting is that it leads to an elegant
+  model of programming that solves the number one stumbling block of
+  StrictTMP: tedious evaluation order annotations.
+
+The problem of over-eager evaluation
+------------------------------------
+
+  In StrictTMP, the caller of a metafunction *must* make sure that the
+  arguments to a metafunction are evaluated *before* the metafunction call
+  is invoked.  The normal way to evaluate an expression is to invoke it:
+
+    expression::type
+
+  Unfortunately, the C++ template mechanism is over-eager.  If both the
+  consequent and the alternative of a conditional expression contain an
+  invocation, e.g.
+
+    if_<condition,
+        consequent::type,
+        alternative::type>
+
+  then both of those invocations will be performed regardless of the value
+  of the condition.  This forces the programmer to very carefully and
+  continuously consider the order of evaluation of expressions.
+
+  In LazyTMP, an expression needs to be invoked only when the value of the
+  expression needs to be explicitly examined.  We shall shortly see what
+  this means.
+
+LMP
+===
+
+  Let's take a look at the basic concepts and constructs of LMP.  Although
+  LMP is essentially a library rather than a language, it has some
+  characteristics similar to programming languages.
+
+  NOTE: It is typical to make a distinction between the metalanguage and
+  the host language and talk about metafunctions and metavalues, etc.
+  Since this is an introduction to the metalanguage and the host language
+  is rarely mentioned, we will drop the meta-prefix.
+
+Functions
+---------
+
+  A basic concept of LMP is that of a function.  A function is a class
+  template written in a specific style or form.  The canonical form of a
+  LMP function looks like this:
+
+    template<class template-parameter-name_1,
+             ...,
+             class template-parameter-name_n>
+    struct function-name
+      : expr {};
+
+  In most cases, the body expression of a LMP function is the name of a
+  template parameter, a call of another function or a constant.  Using a
+  BNF-style notation, we could describe the syntax like this:
+
+    expr ::= template-parameter-name
+           | function-name < expr, ..., expr >  ;; function call
+           | int_< constant-expr >              ;; an integral constant
+           | true_ | false_                     ;; a boolean constant
+
+  The above grammar snippet describes only a subset of LMP.  We will
+  introduce the elements of LMP gradually.
+
+Factorial
+---------
+
+  As a first concrete LMP example, the factorial function could be written
+  like this:
+
+    template<class N>
+    struct factorial
+      : if_<is_0<N>,
+            int_<1>,
+            times<N, factorial<pred<N> > > > {};
+
+  Above, the names `if_', `is_0', `times' and `pred' refer to primitive
+  functions defined by the LMP library.  Given the above definition of
+  factorial we can now compute factorials.  For example, the expression
+
+    factorial<int_<5> >
+
+  denotes the same value as the expression
+
+    int_<120> .
+
+Evaluation
+----------
+
+  In LMP, an expression can be evaluated to a value using an explicit
+  invocation of the form
+
+    expression::eval .
+
+  For example, given the previous definition of `factorial'
+
+    factorial<int_<5> >::eval
+
+  is the same type as
+
+    int_<120> .
+
+Values
+------
+
+  One special characteristic of LMP, when compared to other TMP libraries,
+  is that all values in LMP can also be evaluated.  For example,
+
+    factorial<int_<5> >::eval::eval
+                             ^^^^^^
+
+  is the same as
+
+    int_<120>::eval ,
+
+  which, in turn, is the same as
+
+    int_<120> .
+
+  Essentially, *all* values in LMP are idempotent computations.
+
+  The basic reason for requiring all values to be idempotent computations
+  is that it essentially eliminates the differences between:
+    1. values,
+    2. function calls or expressions, and
+    3. delayed computations.
+  In contemporary StrictTMP libraries, like the Boost MPL library, all of
+  the above are separate concepts and the programmer must be very careful
+  to distinguish between them.
+
+Laziness
+--------
+
+  As we have said, LMP supports the lazy programming model.  Under lazy
+  evaluation, expressions are normally evaluated to a value only when it
+  is absolutely necessary.  This is particularly visible in the
+  constructors and destructors (or selectors) of data types.  For example,
+  the list constructor `cons<H, T>' is lazy.  Neither the given head
+  expression `H' or the tail expression `T' is evaluated implicitly by the
+  list constructor `cons<H, T>'.
+
+  One possible definition of the `cons' list constructor looks like this:
+
+    template<class H, class T>
+    struct cons {
+      typedef cons eval;
+    };
+
+  As you can clearly see, `cons' makes no attempt to evaluate either
+  parameter.  Also, an arbitrary `cons' expression simply evaluates to
+  itself:
+
+    cons<plus<int_<1>, int_<2> >,
+         not_<true_> >::eval == cons<plus<int_<1>, int_<2> >,
+                                     not_<true_> >
+
+  To make `cons' cels useful, one can define the destructor functions
+  `head' and `tail' to take apart `cons' cells.  Let's take a look at a
+  possible definition of `head':
+
+    template<class E>
+    struct head
+      : head<typename E::eval> {};
+
+    template<class H, class T>
+    struct head<cons<H, T> >
+      : H {};
+
+  Above, in the base case of `head', you can see an invocation `typename
+  E::eval'.  Like in LMP in general, the destructor `head' does not expect
+  to receive a value as argument.  The base case of `eval' assumes that it
+  was given an unevaluated expression as an argument.  It then forces the
+  evaluation of the expression to yield a value and defers to the
+  specialized case of `head'.  The *only* places where invocations are
+  required in LMP are in primitive data type destructors, like `head', and
+  other primitive operations that examine representation of values, like
+  in `eq' for comparing `int_' values.
+
+  The laziness of constructors has many consequences.  One useful
+  consequences is that it becomes possible to represent infinite data
+  structures.  For example, the following would define an infinite list of
+  ones:
+
+    struct ones
+      : cons<int_<1>, ones> {};
+
+  Compared to strict lists, lazy lists are considerably more flexible and
+  orthogonal; manipulation of lazy lists requires fewer and simpler
+  functions compared to strict lists.
+
+Boxing
+------
+
+  While the requirements for values eliminate the difference between
+  values, expressions and delayed computations, not all (C++) types are
+  LMP values.  For example, the type `int' is not an LMP value, because the
+  expression
+
+    int::eval
+
+  is invalid.
+
+  A template metaprogram may certainly need to manipulate arbitrary types.
+  For this purpose LMP provides the box<T> construct.  The box<T>
+  construct turns an arbitrary type T into an idempotent computation:
+
+    box<T>::eval == box<T> == box<T>::eval::eval .
+
+  The type T inside a box<T> can be extracted using an invocation of the
+  form
+
+    expression::eval::type .
+
+  For example, given
+
+    template<class L, class R>
+    struct bigger
+      : if_<less<sizeof_<L>, sizeof_<R> >,
+            R,
+            L> {};
+
+  the type of the invocation
+
+    bigger<box<ptrdiff_t>,
+           box<long> >::eval::type
+
+  is either `ptrdiff_t' or `long'.
+
+First class functions
+---------------------
+
+  A LMP top-level function, like the previously seen factorial function,
+  does not fulfill the requirements of an LMP value, because the template
+  name `factorial' is not a type.  To turn a top-level function into a
+  first class function, the LMP library provides a set of numbered
+  wrappers:
+
+     op_1<UF>, op_2<BF>, ...
+
+  One wrapper exists for each supported arity.  For example, to turn the
+  unary factorial function into a first class function, we would write
+
+     op_1<factorial> .
+
+  To call a first class function, LMP provides the higher-order function
+  `apply'.  For example, given the factorial definition, we could write
+
+    apply<op_1<factorial>,
+          int_<5> >
+
+  to denote the value
+
+    int_<120> .
+
+  Using `apply' and `op_N' we can define and use higher-order functions.
+  For example, we could implement the well known higher-order list
+  transformation function `map'
+
+    template<class Op, class L>
+    struct map
+      : if_<is_nil<L>,
+            nil,
+            cons<apply<Op, head<L> >,
+                 map<Op, tail<L> > > > {};
+
+  and use it to transform a list
+
+    map<op_1<succ>,
+        int_list<3, 1, 4> > == int_list<4, 2, 5> .
+
+  The LMP library provides many higher-order functions for manipulating
+  lists in the style of the Haskell 98 standard prelude.
+
+Design trade-offs
+-----------------
+
+  You may wonder about the use of `op_N' wrappers.  As a whole, the goal of
+  the LMP design is to make programming as simple as possible while
+  keeping LMP as close to the bare C++ template mechanism as possible.  To
+  achieve the primary goal, the syntax of top-level function definitions
+  has been kept as simple as possible.  Due to the secondary goals, LMP
+  directly relies on the bare C++ template mechanism rather than a
+  separate evaluation or interpretation function.  It would certainly be
+  possible to end up with a different design given different goals.
+
+Partial application
+-------------------
+
+  LMP supports partial application of first class functions.  In general,
+
+    apply<F, X, Y> == apply<apply<F, X>, Y> .
+
+  For example, using the previously introduced higher-order function `map'
+  and the arithmetic `plus' function provided by LMP, we could write
+
+    map<apply<op_1<plus>, int_<2> >,
+        int_list<3, 1, 4> > == int_list<5, 3, 6> .
+
+  Above, the expression
+
+    apply<op_1<plus>, int_<2> >
+
+  is a partial application whose result is an unary first class function.
+
+Lambda abstractions
+-------------------
+
+  While it is possible to build a complete set of combinators such that
+  any function can be expressed as a combination of those functions, it
+  can be more convenient to use lambda abstractions.
+
+  The LMP library provides the wrapper `fun<var, ..., var, expr>' for
+  turning arbitrary expressions into first class functions.  For example,
+  the expression
+
+     fun<X, Y,
+         less<length<X>, length<Y> > >
+
+  would define a predicate that we could use for sorting lists by their
+  length:
+
+    sort<fun<X, Y,
+             less<length<X>, length<Y> > >,
+         list<int_list<3, 3, 3>,
+              int_list<1>,
+              int_list<4, 4, 4, 4> > > == list<int_list<1>,
+                                               int_list<3, 3, 3>,
+                                               int_list<4, 4, 4, 4> >
+
+  The use of the names `X' and `Y' in the above `fun' expressions may be
+  puzzling.  The LMP library directly supports the use of all single
+  character upper case identifiers [A-Z] as names of variables.  It is
+  somewhat limiting, but careful use of single character names can lead to
+  quite readable code.
+
+Type traits
+-----------
+
+  As we have seen previously, arbitrary types are not considered LMP
+  values.  Legacy template metaprogramming libraries often allow the use of
+  arbitrary types as values.  Most notably the Boost Type Traits library
+  defines a highly useful set of strict metafunctions for inspecting and
+  manipulating C++ types.  The LMP library contains special support for the
+  Boost Type Traits library.  For each type trait named `X' provided by the
+  Boost Type Traits library, the LMP library provides a first class
+  function named `X_trait'.
+
+  The first class trait functions accept boxed types as arguments and
+  result in a boxed type when appropriate.  This makes it possible to use
+  the traits as ordinary LMP functions.  For example, we could transform a
+  list of boxed types to a list of boxed pointer types like this:
+
+    map<add_pointer_trait,
+        box_list<int, float, char> > == box_list<int*, float*, char*>
+
+More
+----
+
+  There is lot more to the LMP library and LazyTMP than you have seen in
+  this introduction.  Unfortunately, documentation is incomplete.  The
+  library headers contain some reference documentation.
+
+  Beware that most of the implementations of functions in the library are
+  optimized.  As was already said earlier, invocations of the form
+  `expr::eval' are *only* required in primitive operations that examine
+  the representation of values.  When invocations appear in other places,
+  they are used for optimization.

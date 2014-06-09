@@ -1,0 +1,23 @@
+#!/bin/bash
+
+# (C) Copyright Vesa Karvonen 2004.
+#
+# Distributed under the Boost Software License, Version 1.0.
+# (See accompanying file LICENSE.)
+
+set -e
+
+for f in $(find ../../../boost/lmp -name '*.hpp') ; do
+    name=$(echo $f | sed -e 's#\.\./\.\./\.\./boost/lmp/##g' -e 's#\.hpp##g')
+    if ! test -f "test_$name.cpp" ; then
+        echo "Adding: test_$name.cpp"
+        echo "\
+// (C) Copyright Vesa Karvonen 2004.
+//
+// Distributed under the Boost Software License, Version 1.0.
+// (See accompanying file LICENSE.)
+
+#include \"boost/lmp/$name.hpp\"
+#include \"test.hpp\"" > "test_$name.cpp"
+    fi
+done
